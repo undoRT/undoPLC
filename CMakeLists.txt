@@ -3,7 +3,7 @@ project(undoPLC VERSION 0.1.0 LANGUAGES CXX)
 
 set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -12,6 +12,7 @@ option(BUILD_TESTS "Build tests" OFF)
 
 # Include directories
 set(UNDOPLC_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+set(BOOST_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/third_party)
 
 # ============================================================================
 #  Compiler flags (conditional for cross-platform support)
@@ -37,11 +38,13 @@ endif()
 #  Static library (core compiler logic)
 # ============================================================================
 add_library(undoPLC_lib STATIC
-    src/*.cpp
+    src/undoSystem.cpp
+    src/cli/main.cpp
 )
 
 target_include_directories(undoPLC_lib PUBLIC
     ${UNDOPLC_INCLUDE_DIR}
+    ${BOOST_INCLUDE_DIR}
 )
 
 target_compile_options(undoPLC_lib PRIVATE
@@ -57,6 +60,7 @@ target_link_libraries(undoPLC PRIVATE undoPLC_lib)
 
 target_include_directories(undoPLC PRIVATE
     ${UNDOPLC_INCLUDE_DIR}
+    ${BOOST_INCLUDE_DIR}
 )
 
 target_compile_options(undoPLC PRIVATE

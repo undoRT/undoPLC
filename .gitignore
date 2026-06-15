@@ -8,9 +8,9 @@ cmake-build-*/
 *.hpp
 !src/**/*.cpp
 !include/**/*.hpp
-!st2cpp_includes/**/*.hpp
-!tests/*.cpp
-!tests/*.hpp
+!third_party/boost/*.hpp
+!tests/test_cpu/*.cpp
+!tests/test_cpu/*.hpp
 *.out
 *.exe
 
