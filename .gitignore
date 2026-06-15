@@ -1,69 +1,64 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
 # Build directories
 build/
-Build/
 build-*/
+cmake-build-*/
 
-# CMake generated files
-CMakeFiles/
+# Generated files
+*.cpp
+*.hpp
+!src/**/*.cpp
+!include/**/*.hpp
+!st2cpp_includes/**/*.hpp
+!tests/*.cpp
+!tests/*.hpp
+*.out
+*.exe
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.orig
+*.bak
+
+# CMake
 CMakeCache.txt
+CMakeFiles/
 cmake_install.cmake
 Makefile
-install_manifest.txt
 compile_commands.json
 
-# Temporary files
-*.tmp
+# Documentation
+docs/
+*.docset
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
-*.bak
-*.swp
+TODO.md
 
-# vcpkg
-vcpkg_installed/
+# Tests output
+tests/*.cpp
+tests/*.hpp
+!tests/*.st
 
-# debug information files
-*.dwo
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+libst2cpp.a
+st2cpp
 
-# test output & cache
-Testing/
-.cache/
+# Test output directories
+tests/test_output/
+tests/*/test_output/
+*.notrack
+clearBeforePush.sh
