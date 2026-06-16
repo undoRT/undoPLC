@@ -8,7 +8,6 @@
  */
 
 #include "undoSystem.hpp"
-#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <boost/algorithm/string.hpp>
@@ -37,6 +36,7 @@ UndoSys::UndoSys()
  */
 bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
 {
+   UndoLog& logger = UndoLog::getInstance();
    bool ret = true;
 
    for (int coreId : cores) {
@@ -47,7 +47,7 @@ bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
       std::string baseFreqVal;
 
       if (!baseFreqFile.is_open() || !(baseFreqFile >> baseFreqVal)) {
-         std::cerr << "[UndoSys Error] Cannot read base_frequency for CPU " << coreId << std::endl;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Cannot read base_frequency for CPU %u", coreId);
          ret = false;
          continue;
       }
@@ -55,20 +55,23 @@ bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
 
       // 2. Set governor to performance to ensure deterministic wake-up times
       if (!writeSysfsAttribute(basePath + "scaling_governor", "performance")) {
-         std::cerr << "[UndoSys Error] Failed to set performance governor on CPU " << coreId << std::endl;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to set performance governor on CPU %u", coreId);
          ret = false;
          continue;
       }
 
       // 3. Set max scaling frequency to nominal base frequency to clamp Turbo Boost
       if (!writeSysfsAttribute(basePath + "scaling_max_freq", baseFreqVal)) {
-         std::cerr << "[UndoSys Error] Failed to clamp Turbo Boost via scaling_max_freq on CPU " << coreId << std::endl;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to clamp Turbo Boost via scaling_max_freq on CPU %u", coreId);
          ret = false;
          continue;
       }
 
-      std::cout << "[UndoSys Info] CPU " << coreId << " successfully locked to nominal frequency ("
-                << (std::stod(baseFreqVal) / 1000000.0) << " GHz) with performance governor." << std::endl;
+      logger.logRT(LogDomain::PLC,
+                   LOG_INFO,
+                   "UndoSys: CPU %u successfully locked to nominal frequency (%f GHz) with performance governor.",
+                   coreId,
+                   (std::stod(baseFreqVal) / 1000000.0));
    }
 
    return ret;
@@ -81,6 +84,7 @@ bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
  */
 bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
 {
+   UndoLog& logger = UndoLog::getInstance();
    bool ret = true;
 
    for (int coreId : cores) {
@@ -91,7 +95,7 @@ bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
       std::string maxFreqVal;
 
       if (!maxFreqFile.is_open() || !(maxFreqFile >> maxFreqVal)) {
-         std::cerr << "[UndoSys Error] Cannot read cpuinfo_max_freq for CPU " << coreId << std::endl;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Cannot read cpuinfo_max_freq for CPU %u", coreId);
          ret = false;
          continue;
       }
@@ -99,19 +103,19 @@ bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
 
       // Restore maximum hardware scaling range to allow standard behavior/Turbo Boost
       if (!writeSysfsAttribute(basePath + "scaling_max_freq", maxFreqVal)) {
-         std::cerr << "[UndoSys Error] Failed to restore scaling_max_freq on CPU " << coreId << std::endl;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to restore scaling_max_freq on CPU %u", coreId);
          ret = false;
          continue;
       }
 
       // Set governor back to powersave for standard OS power management
       if (!writeSysfsAttribute(basePath + "scaling_governor", "powersave")) {
-         std::cerr << "[UndoSys Error] Failed to restore powersave governor on CPU " << coreId << std::endl;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to restore powersave governor on CPU %u", coreId);
          ret = false;
          continue;
       }
 
-      std::cout << "[UndoSys Info] CPU " << coreId << " successfully restored to powersave governor." << std::endl;
+      logger.logRT(LogDomain::PLC, LOG_INFO, "UndoSys: CPU %u successfully restored to powersave governor.", coreId);
    }
 
    return ret;
@@ -131,20 +135,16 @@ bool UndoSys::initTscFrequency()
    // Try discovering via native Intel CPUID leaf 0x15
    if (__get_cpuid(0x15, &eax, &ebx, &ecx, &edx) && eax != 0 && ebx != 0 && ecx != 0) {
       _tscFrequencyHz = static_cast<uint64_t>(ecx) * ebx / eax;
-      std::cout << "[UndoSys Info] TSC frequency discovered via CPUID: " << (_tscFrequencyHz / 1000000.0) << " MHz" << std::endl;
       return true;
    }
 
    // Fallback to sysfs if CPUID leaf 0x15 is unpopulated or untrusted
-   // The following method to read tsc works only if module https://github.com/trailofbits/tsc_freq_khz
-   // is installed (undoOS should have it)
    std::string sysfsPath = "/sys/devices/system/cpu/cpu0/tsc_freq_khz";
    std::ifstream tscFile(sysfsPath);
    uint64_t freqKhz = 0;
 
    if (tscFile.is_open() && (tscFile >> freqKhz)) {
       _tscFrequencyHz = freqKhz * 1000ULL;
-      std::cout << "[UndoSys Info] TSC frequency discovered via sysfs fallback: " << (_tscFrequencyHz / 1000000.0) << " MHz" << std::endl;
       tscFile.close();
       return true;
    }
@@ -153,9 +153,21 @@ bool UndoSys::initTscFrequency()
       tscFile.close();
    }
 
-   std::cerr << "[UndoSys Error] Critical: Failed to resolve Invariant TSC frequency." << std::endl;
    _tscFrequencyHz = 0;
    return false;
+}
+
+/**
+ * @brief Explicitly logs the resolved TSC frequency once the logging infrastructure is safe.
+ */
+void UndoSys::logSystemStatus()
+{
+   UndoLog& logger = UndoLog::getInstance();
+   if (_tscFrequencyHz > 0) {
+      logger.logRT(LogDomain::PLC, LOG_INFO, "UndoSys: TSC frequency validated at: %f MHz", (_tscFrequencyHz / 1000000.0));
+   } else {
+      logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Critical: Failed to resolve Invariant TSC frequency.");
+   }
 }
 
 /**
@@ -191,7 +203,8 @@ const std::vector<int>& UndoSys::getIsolatedCpu()
    std::string isolatedCpus;
 
    if (!isolatedCpusFile.is_open()) {
-      std::cerr << "[UndoSys Error] Cannot open isolated CPUs file: " << filePath << std::endl;
+      UndoLog& logger = UndoLog::getInstance();
+      logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Cannot open isolated CPUs file: %s", filePath.data());
       return _isolatedCores;
    }
 
@@ -224,7 +237,8 @@ const std::vector<int>& UndoSys::getIsolatedCpu()
       boost::split(vecGrpCpus, grpCpu, boost::is_any_of("-"));
 
       if (vecGrpCpus.size() != 2) {
-         std::cerr << "[UndoSys Error] Invalid group range format for isolated CPUs: " << grpCpu << std::endl;
+         UndoLog& logger = UndoLog::getInstance();
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Invalid group range format for isolated CPUs: %s", grpCpu.data());
          _isolatedCores.clear(); // Clear to avoid partial invalid states
          return _isolatedCores;
       }
@@ -261,7 +275,8 @@ int UndoSys::getTotalCpu()
    std::string totNumCpusStr;
 
    if (!onlineCpuFile.is_open()) {
-      std::cerr << "[UndoSys Error] Cannot open online CPUs file: " << filePath << std::endl;
+      UndoLog& logger = UndoLog::getInstance();
+      logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Cannot open online CPUs file: %s", filePath.data());
       _totNumCores = -1;
       return _totNumCores;
    }
@@ -277,7 +292,8 @@ int UndoSys::getTotalCpu()
    boost::split(vecCpus, totNumCpusStr, boost::is_any_of("-"));
 
    if (vecCpus.size() != 2) {
-      std::cerr << "[UndoSys Error] Invalid group range format for total CPUs: " << totNumCpusStr << std::endl;
+      UndoLog& logger = UndoLog::getInstance();
+      logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Invalid group range format for total CPUs: %s", totNumCpusStr.data());
       _totNumCores = -1;
       return _totNumCores;
    }
@@ -372,7 +388,8 @@ bool UndoSys::writeSysfsAttribute(const std::string& path, const std::string& va
 {
    std::ofstream file(path);
    if (!file.is_open()) {
-      std::cerr << "[UndoSys Error] Failed to open sysfs path: " << path << " (Root privileges required)" << std::endl;
+      UndoLog& logger = UndoLog::getInstance();
+      logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to open sysfs path: %s  (Root privileges required)", path.data());
       return false;
    }
    file << value;

@@ -9,8 +9,12 @@ cmake-build-*/
 !src/**/*.cpp
 !include/**/*.hpp
 !third_party/boost/*.hpp
-!tests/test_cpu/*.cpp
-!tests/test_cpu/*.hpp
+!tests/**/*.cpp
+!tests/**/*.hpp
+!CMakeLists.txt
+tests/**/libundoPLC_lib.a
+tests/**/CPackSourceConfig.cmake
+tests/**/CPackConfig.cmake
 *.out
 *.exe
 
@@ -54,11 +58,8 @@ tests/*.hpp
 *.dll
 *.so
 *.dylib
-libst2cpp.a
-st2cpp
+undoPLC
+CMakeCache.txt
 
-# Test output directories
-tests/test_output/
-tests/*/test_output/
 *.notrack
 clearBeforePush.sh

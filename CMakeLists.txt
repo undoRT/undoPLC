@@ -39,6 +39,7 @@ endif()
 # ============================================================================
 add_library(undoPLC_lib STATIC
     src/undoSystem.cpp
+    src/undoLog.cpp
     src/cli/main.cpp
 )
 

@@ -8,38 +8,65 @@
  */
 
 #include "undoSystem.hpp"
+#include "undoLog.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <boost/asio/io_context.hpp>
 
-int main()
+int main(int argc, char* argv[])
 {
+   bool logToConsole = false;
+   for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]) == "--log2console") {
+         logToConsole = true;
+      }
+   }
+
+   // 1. Initialize the Asio context required by our EventFd engine
+   boost::asio::io_context ioc;
+
+   // 2. Safely resolve singletons now that constructor loops are clean
    UndoSys& systemManager = UndoSys::getInstance();
+   UndoLog& logger = UndoLog::getInstance();
 
-   uint32_t sleepNs = 531000;
-   uint64_t ts1 = systemManager.readTsc();
-   systemManager.busyWait(sleepNs);
-   ts1 = systemManager.tsc2Ns(systemManager.readTsc() - ts1);
-   std::cout << "First elapsed time in uS " << ts1 / 1000LL << std::endl;
+   // 3. Fire up the logging backend
+   logger.init(ioc, logToConsole);
 
-   ts1 = systemManager.readTsc();
    std::cout << "========================================" << std::endl;
    std::cout << "    undoPLC - System Test Validation    " << std::endl;
    std::cout << "========================================" << std::endl;
 
-   // 1. Test Hardware Topology Discovery
+   // Log the deferred system verification safely
+   systemManager.logSystemStatus();
+
+   // 4. Test Hardware Topology Discovery
    int totalCpus = systemManager.getTotalCpu();
+   logger.logRT(LogDomain::PLC, LOG_INFO, "Fetching CPU Topology. Total CPUs detected: %d", totalCpus);
+
+   const std::vector<int>& isolatedCores = systemManager.getIsolatedCpu();
+   const std::vector<int>& sharedCores = systemManager.getSharedCpu();
+
+   // Busy wait validation test
+   uint32_t sleepNs = 531000;
+   uint64_t ts1 = systemManager.readTsc();
+   systemManager.busyWait(sleepNs);
+   ts1 = systemManager.tsc2Ns(systemManager.readTsc() - ts1);
+   std::cout << "First elapsed busy-wait time in uS: " << ts1 / 1000LL << std::endl;
+
+   ts1 = systemManager.readTsc();
+
+   // 1. Test Hardware Topology Discovery
+   totalCpus = systemManager.getTotalCpu();
    std::cout << "\n[Test] Fetching CPU Topology..." << std::endl;
    std::cout << "-> Total CPUs detected: " << totalCpus << std::endl;
 
-   const std::vector<int>& isolatedCores = systemManager.getIsolatedCpu();
    std::cout << "-> Isolated Cores count: " << isolatedCores.size() << " | Cores: [ ";
    for (int core : isolatedCores) {
       std::cout << core << " ";
    }
    std::cout << "]" << std::endl;
 
-   const std::vector<int>& sharedCores = systemManager.getSharedCpu();
    std::cout << "-> Shared OS Cores count: " << sharedCores.size() << " | Cores: [ ";
    for (int core : sharedCores) {
       std::cout << core << " ";
@@ -78,6 +105,10 @@ int main()
    std::cout << "========================================" << std::endl;
 
    std::cout << "Elapsed time in S " << systemManager.tsc2Ns(systemManager.readTsc() - ts1) / 1000000000LL << std::endl;
+
+   // Since we are running a manual linear test validation without background threads,
+   // we can poll the execution queue once or let ioc.poll() clear the eventfd signals.
+   ioc.poll();
 
    return 0;
 }

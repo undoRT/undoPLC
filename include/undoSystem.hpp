@@ -14,6 +14,7 @@
 #include <x86intrin.h>
 #include <cpuid.h>
 #include <cstdint>
+#include "undoLog.hpp"
 
 class UndoSys
 {
@@ -53,6 +54,7 @@ public:
 
    // Helper methods
    void busyWait(uint64_t ns);
+   void logSystemStatus();
 
 private:
    // Private constructor to ensure instantiation only via getInstance()
