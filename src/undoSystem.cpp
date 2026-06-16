@@ -14,10 +14,21 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/sort/spreadsort/integer_sort.hpp>
 
+// =============== Public methods ===============
+
 /**
  * @class UndoSys
  * @brief Manages low-level system configurations for real-time operations.
  */
+
+/**
+  * @brief Construct a new Undo Sys:: Undo Sys object
+  */
+UndoSys::UndoSys()
+{
+   // Auto-discover TSC frequency during system initiaization
+   initTscFrequency();
+}
 
 /**
  * @brief Configures specific CPU cores to run at their nominal frequency using the performance governor.
@@ -75,7 +86,7 @@ bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
    for (int coreId : cores) {
       std::string basePath = "/sys/devices/system/cpu/cpu" + std::to_string(coreId) + "/cpufreq/";
 
-      // 1. Read the maximum absolute hardware frequency supported by the silicon
+      // Read the maximum absolute hardware frequency supported by the silicon
       std::ifstream maxFreqFile(basePath + "cpuinfo_max_freq");
       std::string maxFreqVal;
 
@@ -86,14 +97,14 @@ bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
       }
       maxFreqFile.close();
 
-      // 2. Restore maximum hardware scaling range to allow standard behavior/Turbo Boost
+      // Restore maximum hardware scaling range to allow standard behavior/Turbo Boost
       if (!writeSysfsAttribute(basePath + "scaling_max_freq", maxFreqVal)) {
          std::cerr << "[UndoSys Error] Failed to restore scaling_max_freq on CPU " << coreId << std::endl;
          ret = false;
          continue;
       }
 
-      // 3. Set governor back to powersave for standard OS power management
+      // Set governor back to powersave for standard OS power management
       if (!writeSysfsAttribute(basePath + "scaling_governor", "powersave")) {
          std::cerr << "[UndoSys Error] Failed to restore powersave governor on CPU " << coreId << std::endl;
          ret = false;
@@ -104,6 +115,61 @@ bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
    }
 
    return ret;
+}
+
+/**
+ * @brief Initializes the TSC frequency by checking CPUID or sysfs fallback.
+ * @return true if frequency was successfully discovered, false otherwise.
+ */
+bool UndoSys::initTscFrequency()
+{
+   if (_tscFrequencyHz) {
+      return true;
+   }
+
+   unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+   // Try discovering via native Intel CPUID leaf 0x15
+   if (__get_cpuid(0x15, &eax, &ebx, &ecx, &edx) && eax != 0 && ebx != 0 && ecx != 0) {
+      _tscFrequencyHz = static_cast<uint64_t>(ecx) * ebx / eax;
+      std::cout << "[UndoSys Info] TSC frequency discovered via CPUID: " << (_tscFrequencyHz / 1000000.0) << " MHz" << std::endl;
+      return true;
+   }
+
+   // Fallback to sysfs if CPUID leaf 0x15 is unpopulated or untrusted
+   // The following method to read tsc works only if module https://github.com/trailofbits/tsc_freq_khz
+   // is installed (undoOS should have it)
+   std::string sysfsPath = "/sys/devices/system/cpu/cpu0/tsc_freq_khz";
+   std::ifstream tscFile(sysfsPath);
+   uint64_t freqKhz = 0;
+
+   if (tscFile.is_open() && (tscFile >> freqKhz)) {
+      _tscFrequencyHz = freqKhz * 1000ULL;
+      std::cout << "[UndoSys Info] TSC frequency discovered via sysfs fallback: " << (_tscFrequencyHz / 1000000.0) << " MHz" << std::endl;
+      tscFile.close();
+      return true;
+   }
+
+   if (tscFile.is_open()) {
+      tscFile.close();
+   }
+
+   std::cerr << "[UndoSys Error] Critical: Failed to resolve Invariant TSC frequency." << std::endl;
+   _tscFrequencyHz = 0;
+   return false;
+}
+
+/**
+ * @brief Converts a duration in TSC clock cycles to nanoseconds based on the discovered CPU frequency.
+ * @param tscCycles The delta or absolute number of TSC cycles.
+ * @return The converted duration in nanoseconds. Returns 0 if the TSC frequency was not initialized.
+ */
+uint64_t UndoSys::tsc2Ns(uint64_t tscCycles) const
+{
+   if (_tscFrequencyHz == 0) [[unlikely]] {
+      return 0;
+   }
+
+   return (tscCycles * 1000000ULL) / (_tscFrequencyHz / 1000ULL);
 }
 
 /**
@@ -166,7 +232,6 @@ const std::vector<int>& UndoSys::getIsolatedCpu()
       int start = std::stoi(vecGrpCpus[0]);
       int end = std::stoi(vecGrpCpus[1]);
 
-      // Fix: must be inclusive (<=) to catch the last core in the range
       for (int i = start; i <= end; ++i) {
          _isolatedCores.push_back(i);
       }
@@ -174,7 +239,7 @@ const std::vector<int>& UndoSys::getIsolatedCpu()
 
    // Sort the isolated cores in descending order as requested
    using namespace boost::sort::spreadsort;
-   integer_sort(_isolatedCores.begin(), _isolatedCores.end(), [](int x, int y) { return x > y; });
+   integer_sort(_isolatedCores.begin(), _isolatedCores.end(), [](int x, int y) { return x < y; });
 
    _isolatedCoresChecked = true;
    return _isolatedCores;
@@ -282,6 +347,21 @@ const std::vector<int>& UndoSys::getSharedCpu()
    return _sharedCores;
 }
 
+/**
+ * @brief Busy wait useful to test accurate time passed
+ * 
+ * @param ns: Wait time in ns
+ */
+void UndoSys::busyWait(uint64_t ns)
+{
+   uint64_t start = readTsc();
+   while (tsc2Ns(readTsc() - start) < ns) {
+      // Prevent the while optimization
+      asm volatile("" : : : "memory");
+   }
+}
+
+// =============== Private methods ===============
 /**
  * @brief Helper method to write a string value to a specific sysfs attributes path.
  * @param path The full path to the sysfs file.

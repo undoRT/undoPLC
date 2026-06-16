@@ -14,8 +14,15 @@
 
 int main()
 {
-   UndoSys systemManager;
+   UndoSys& systemManager = UndoSys::getInstance();
 
+   uint32_t sleepNs = 531000;
+   uint64_t ts1 = systemManager.readTsc();
+   systemManager.busyWait(sleepNs);
+   ts1 = systemManager.tsc2Ns(systemManager.readTsc() - ts1);
+   std::cout << "First elapsed time in uS " << ts1 / 1000LL << std::endl;
+
+   ts1 = systemManager.readTsc();
    std::cout << "========================================" << std::endl;
    std::cout << "    undoPLC - System Test Validation    " << std::endl;
    std::cout << "========================================" << std::endl;
@@ -69,5 +76,8 @@ int main()
    }
 
    std::cout << "========================================" << std::endl;
+
+   std::cout << "Elapsed time in S " << systemManager.tsc2Ns(systemManager.readTsc() - ts1) / 1000000000LL << std::endl;
+
    return 0;
 }
