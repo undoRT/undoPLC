@@ -30,6 +30,9 @@ int main(int argc, char* argv[])
    UndoSys& systemManager = UndoSys::getInstance();
    UndoLog& logger = UndoLog::getInstance();
 
+   // Register this thread
+   logger.registerThread();
+
    // 3. Fire up the logging backend
    logger.init(ioc, logToConsole);
 

@@ -186,7 +186,6 @@ uint64_t UndoSys::tsc2Ns(uint64_t tscCycles) const
 
 /**
  * @brief Get a vector with all the isolated cpus in order
- * 
  * @return vector of isolated cpus
  */
 const std::vector<int>& UndoSys::getIsolatedCpu()
@@ -251,7 +250,7 @@ const std::vector<int>& UndoSys::getIsolatedCpu()
       }
    }
 
-   // Sort the isolated cores in descending order as requested
+   // Sort the isolated cores in ascending order as requested
    using namespace boost::sort::spreadsort;
    integer_sort(_isolatedCores.begin(), _isolatedCores.end(), [](int x, int y) { return x < y; });
 
@@ -260,9 +259,9 @@ const std::vector<int>& UndoSys::getIsolatedCpu()
 }
 
 /**
- * @brief Get the total number of the cpus
- * 
- * @return number of cpus, -1 if error
+ * @brief Get the total number of online cpus, handling complex ranges (e.g., "0-3,6-7")
+ * This method populates also _onlineCores.
+ * * @return number of cpus, -1 if error
  */
 int UndoSys::getTotalCpu()
 {
@@ -272,7 +271,7 @@ int UndoSys::getTotalCpu()
 
    std::string filePath = "/sys/devices/system/cpu/online";
    std::ifstream onlineCpuFile(filePath);
-   std::string totNumCpusStr;
+   std::string onlineCpusStr;
 
    if (!onlineCpuFile.is_open()) {
       UndoLog& logger = UndoLog::getInstance();
@@ -281,36 +280,52 @@ int UndoSys::getTotalCpu()
       return _totNumCores;
    }
 
-   if (!(onlineCpuFile >> totNumCpusStr)) {
+   if (!(onlineCpuFile >> onlineCpusStr)) {
       onlineCpuFile.close();
       _totNumCores = -1;
       return _totNumCores;
    }
    onlineCpuFile.close();
 
-   std::vector<std::string> vecCpus;
-   boost::split(vecCpus, totNumCpusStr, boost::is_any_of("-"));
+   // Handle potential complex formats like "0-3,6-7" or "0"
+   std::vector<std::string> groups;
+   boost::split(groups, onlineCpusStr, boost::is_any_of(","));
 
-   if (vecCpus.size() != 2) {
-      UndoLog& logger = UndoLog::getInstance();
-      logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Invalid group range format for total CPUs: %s", totNumCpusStr.data());
-      _totNumCores = -1;
-      return _totNumCores;
+   int calculatedCores = 0;
+
+   for (const auto& group : groups) {
+      if (group.find("-") == std::string::npos) {
+         // Single core entry (e.g., "0")
+         calculatedCores++;
+         // Append online core
+         _onlineCores.push_back(std::stoi(group));
+      } else {
+         // Range entry (e.g., "0-3")
+         std::vector<std::string> rangeLimits;
+         boost::split(rangeLimits, group, boost::is_any_of("-"));
+         if (rangeLimits.size() == 2) {
+            int start = std::stoi(rangeLimits[0]);
+            int end = std::stoi(rangeLimits[1]);
+            calculatedCores += (end - start) + 1;
+            for (int i = start; i <= end; ++i) {
+               _onlineCores.push_back(i);
+            }
+         }
+         // If layout is corrupted, skip to avoid crashes
+      }
    }
 
-   int start = std::stoi(vecCpus[0]);
-   int end = std::stoi(vecCpus[1]);
-
-   _totNumCores = (end - start) + 1;
-
+   _totNumCores = calculatedCores;
+   // Sort the isolated cores in ascending order as requested
+   using namespace boost::sort::spreadsort;
+   integer_sort(_onlineCores.begin(), _onlineCores.end(), [](int x, int y) { return x < y; });
    return _totNumCores;
 }
 
 /**
  * @brief Retrieves the list of CPUs shared with the OS (non-isolated cores).
- * This method calculates the complement of the isolated cores. Any CPU core
- * that is active but not explicitly marked as isolated will be considered shared.
- * Optimization attributes [[unlikely]] are used for error handling paths.
+ * This method calculates the complement of the isolated cores relative to the
+ * currently online CPU cores, handling non-contiguous topologies cleanly.
  * @return const std::vector<int>& A reference to the vector containing shared CPU IDs.
  */
 const std::vector<int>& UndoSys::getSharedCpu()
@@ -319,53 +334,43 @@ const std::vector<int>& UndoSys::getSharedCpu()
       return _sharedCores;
    }
 
-   int totCpu = getTotalCpu();
-   if (totCpu == -1) [[unlikely]] {
+   // It computes _onlineCores
+   if (getTotalCpu() == -1) {
       return _sharedCores;
    }
 
-   // Pull a fresh local copy or reference to ensure isolation is parsed
+   // Fetch the isolated cores to compute the difference
    const std::vector<int>& isolated = getIsolatedCpu();
-   size_t numOfIsolated = isolated.size();
-
-   if (!numOfIsolated) {
-      _sharedCores.clear();
-      for (int i = 0; i < totCpu; ++i) {
-         _sharedCores.push_back(i);
-      }
-      _sharedCoresChecked = true;
-      return _sharedCores;
-   }
 
    _sharedCores.clear();
-
-   // Fill missing gaps between sorted isolated cores
-   for (size_t i = 0; i < numOfIsolated; ++i) {
-      if (i == 0) {
-         // Gap from core 0 to the first isolated core
-         for (int j = 0; j < isolated[i]; ++j) {
-            _sharedCores.push_back(j);
-         }
-      } else {
-         // Gap between consecutive isolated cores
-         for (int j = isolated[i - 1] + 1; j < isolated[i]; ++j) {
-            _sharedCores.push_back(j);
-         }
+   // Keep only the online cores that are NOT inside the isolated vector
+   for (int core : _onlineCores) {
+      // If core is not found in isolated, then it's shared with the OS
+      if (std::find(isolated.begin(), isolated.end(), core) == isolated.end()) {
+         _sharedCores.push_back(core);
       }
    }
 
-   // Gap from the last isolated core up to the maximum system CPU count
-   for (int j = isolated[numOfIsolated - 1] + 1; j < totCpu; ++j) {
-      _sharedCores.push_back(j);
-   }
+   // Sort for architectural consistency
+   using namespace boost::sort::spreadsort;
+   integer_sort(_sharedCores.begin(), _sharedCores.end(), [](int x, int y) { return x < y; });
 
    _sharedCoresChecked = true;
    return _sharedCores;
 }
 
 /**
+ * @brief Get vector with online cpus
+ * @return const std::vector<int>& A Reference to the vector containing online CPU IDs 
+ */
+const std::vector<int>& UndoSys::getOnlineCpu()
+{
+   getTotalCpu();
+   return _onlineCores;
+}
+
+/**
  * @brief Busy wait useful to test accurate time passed
- * 
  * @param ns: Wait time in ns
  */
 void UndoSys::busyWait(uint64_t ns)

@@ -17,10 +17,14 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <unordered_map>
+#include <mutex>
+#include <memory>
+#include <thread>
 
 // Static configuration for Rel-Time
 constexpr size_t LOG_MSG_MAX_LEN = 128;     // Maximum buffer message dimension
-constexpr size_t LOG_QUEUE_CAPACITY = 4096; // Maximum number of messages into the queue
+constexpr size_t LOG_QUEUE_CAPACITY = 1024; // Maximum number of messages into the queue
 
 /**
  * @enum LogDomain
@@ -60,6 +64,10 @@ public:
 
    void init(boost::asio::io_context& ioc, bool log2console);
    void logRT(LogDomain domain, int level, const char* format, ...) __attribute__((format(printf, 4, 5)));
+   void registerThread();
+   void closeRegistration();
+
+   using SpscQueue = boost::lockfree::spsc_queue<LogRecord, boost::lockfree::capacity<LOG_QUEUE_CAPACITY>>;
 
 private:
    UndoLog() {}
@@ -71,11 +79,14 @@ private:
    bool _log2console{false};
    int _eventFd{-1};
 
+   // Core pre-allocated lock-free ring buffer: one for each thread (Thread-Local Storage pattern with Lock-Free drain)
+   std::unordered_map<std::thread::id, std::unique_ptr<SpscQueue>> _queues;
+   // Used only in a startup field, not in RT
+   std::mutex _registrationMutex;
+   std::atomic<bool> _registrationOpen{true};
+
    // Non-copyable/movable OS descriptors managed by unique_ptr to allow safe Singleton lifecycle
    std::unique_ptr<boost::asio::posix::stream_descriptor> _streamDesc{nullptr};
-
-   // Core pre-allocated lock-free ring buffer
-   boost::lockfree::spsc_queue<LogRecord, boost::lockfree::capacity<LOG_QUEUE_CAPACITY>> _queue;
 
    // Static 8-byte buffer required for eventfd atomic counter accumulation
    uint64_t _eventfdBuffer{0};

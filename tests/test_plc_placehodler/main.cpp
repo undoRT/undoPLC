@@ -27,6 +27,9 @@ int main(int argc, char* argv[])
    UndoSys& sys = UndoSys::getInstance();
    UndoLog& logger = UndoLog::getInstance();
 
+   // Register this thread
+   logger.registerThread();
+
    // Pass the io_context reference to the logger subsystem
    logger.init(ioc, logToConsole);
 

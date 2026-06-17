@@ -51,6 +51,7 @@ public:
    const std::vector<int>& getIsolatedCpu();
    int getTotalCpu();
    const std::vector<int>& getSharedCpu();
+   const std::vector<int>& getOnlineCpu();
 
    // Helper methods
    void busyWait(uint64_t ns);
@@ -63,9 +64,10 @@ private:
 
    // Members
    std::vector<int> _isolatedCores;   // Vector of isolated cores (empty if there are not isolated cores)
+   std::vector<int> _onlineCores;     // Vector of online cores (empty if there are not online cores...wft)
+   std::vector<int> _sharedCores;     // Vector of shared cores (empty if there are not shared cores)
    bool _isolatedCoresChecked{false}; // True if _isolatedCores already done
    int _totNumCores{-1};              // Total number of cores
-   std::vector<int> _sharedCores;     // Vector of shared cores (empty if there are not shared cores)
    bool _sharedCoresChecked{false};   // True if _sharedCores already done
    uint64_t _tscFrequencyHz{0};       // Global hardware constant for conversion
 

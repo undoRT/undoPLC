@@ -10,6 +10,12 @@
 #include "undoLog.hpp"
 #include "undoSystem.hpp"
 
+// Fast thread-local cache pointer bypassing map lookups during critical RT path
+static thread_local UndoLog::SpscQueue* localQueue = nullptr;
+
+/**
+ * @brief Destroy the Undo Log:: Undo Log object
+ */
 UndoLog::~UndoLog()
 {
    closelog();
@@ -25,6 +31,8 @@ UndoLog::~UndoLog()
  */
 void UndoLog::init(boost::asio::io_context& ioc, bool log2console)
 {
+   // Signal registration is open
+   _registrationOpen = true;
    _log2console = log2console;
 
    // Connection to Linux local syslog
@@ -48,6 +56,28 @@ void UndoLog::init(boost::asio::io_context& ioc, bool log2console)
 }
 
 /**
+ * @brief Register a queue spsc for a single thread log
+ * Method that should be called ONLY one time during thread startup (NOT RT)
+ */
+void UndoLog::registerThread()
+{
+   assert(_registrationOpen && "registerThread called after closeRegistration()");
+   auto queue = std::make_unique<SpscQueue>();
+   // Assign the raw pointer to the thread_local storage
+   localQueue = queue.get();
+   std::lock_guard lock(_registrationMutex);
+   _queues[std::this_thread::get_id()] = std::move(queue);
+}
+
+/**
+ * @brief Permanently closes thread registration once initialization concludes.
+ */
+void UndoLog::closeRegistration()
+{
+   _registrationOpen = false;
+}
+
+/**
  * @brief Write a deferred log (lock-free). It is safe for thread RT.
  * @param domain Log origin (LogDomain::BUS, PLC, PRG).
  * @param level POSIX priority level (eg. LOG_INFO, LOG_ERR).
@@ -55,6 +85,11 @@ void UndoLog::init(boost::asio::io_context& ioc, bool log2console)
  */
 void UndoLog::logRT(LogDomain domain, int level, const char* format, ...)
 {
+   // Fallback safety checkpoint for unregistered background threads
+   if (!localQueue) [[unlikely]] {
+      return;
+   }
+
    LogRecord record;
    record.logLevel = level;
    record.domain = domain;
@@ -67,8 +102,8 @@ void UndoLog::logRT(LogDomain domain, int level, const char* format, ...)
    vsnprintf(record.message, LOG_MSG_MAX_LEN, format, args);
    va_end(args);
 
-   // Push into the safe pre-allocated queue
-   _queue.push(record);
+   // Direct lock-free push into the pre-allocated circular buffer
+   localQueue->push(record);
 
    // Notify the OS kernel eventfd counter.
    // Writing an 8-byte integer '1' increments the kernel counter and triggers epoll.
@@ -107,34 +142,36 @@ void UndoLog::startAsyncRead()
 void UndoLog::processLogs()
 {
    LogRecord record;
-   while (_queue.pop(record)) {
-      const char* domainStr = "undoPLC";
-      const char* colorCode = "\033[0m";
+   for (auto& [id, queue] : _queues) {
+      while (queue->pop(record)) {
+         const char* domainStr = "undoPLC";
+         const char* colorCode = "\033[0m";
 
-      switch (record.domain) {
-      case LogDomain::BUS:
-         domainStr = "undoBUS";
-         colorCode = "\033[1;36m";
-         break;
-      case LogDomain::PLC:
-         domainStr = "undoPLC";
-         colorCode = "\033[1;32m";
-         break;
-      case LogDomain::PRG:
-         domainStr = "undoPRG";
-         colorCode = "\033[1;35m";
-         break;
-      }
+         switch (record.domain) {
+         case LogDomain::BUS:
+            domainStr = "undoBUS";
+            colorCode = "\033[1;36m";
+            break;
+         case LogDomain::PLC:
+            domainStr = "undoPLC";
+            colorCode = "\033[1;32m";
+            break;
+         case LogDomain::PRG:
+            domainStr = "undoPRG";
+            colorCode = "\033[1;35m";
+            break;
+         }
 
-      syslog(record.logLevel, "<%s> [%lu ns] %s", domainStr, record.timestampNs, record.message);
+         syslog(record.logLevel, "<%s> [%lu ns] %s", domainStr, record.timestampNs, record.message);
 
-      if (_log2console) {
-         if (record.logLevel <= LOG_ERR) {
-            std::printf("\033[1;31m[ERR][%s][%lu ns] %s\033[0m\n", domainStr, record.timestampNs, record.message);
-         } else if (record.logLevel == LOG_WARNING) {
-            std::printf("\033[1;33m[WRN][%s][%lu ns] %s\033[0m\n", domainStr, record.timestampNs, record.message);
-         } else {
-            std::printf("%s[%s]\033[0m[%lu ns] %s\n", colorCode, domainStr, record.timestampNs, record.message);
+         if (_log2console) {
+            if (record.logLevel <= LOG_ERR) {
+               std::printf("\033[1;31m[ERR][%s][%lu ns] %s\033[0m\n", domainStr, record.timestampNs, record.message);
+            } else if (record.logLevel == LOG_WARNING) {
+               std::printf("\033[1;33m[WRN][%s][%lu ns] %s\033[0m\n", domainStr, record.timestampNs, record.message);
+            } else {
+               std::printf("%s[%s]\033[0m[%lu ns] %s\n", colorCode, domainStr, record.timestampNs, record.message);
+            }
          }
       }
    }
