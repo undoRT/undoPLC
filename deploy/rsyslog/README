@@ -1,0 +1,7 @@
+
+Save undoPLC.conf on /etc/rsyslog.d
+
+then execute from cli:
+
+sudo systemctl restart rsyslog
+

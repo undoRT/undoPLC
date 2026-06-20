@@ -1,0 +1,124 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/*'
+    tags:
+      - 'v*'
+  workflow_dispatch:  # Allow manual trigger from Actions tab
+
+# Add permissions for creating releases
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout source code
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. Install system dependencies
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake g++ libboost-all-dev
+
+    # 3. Configure CMake
+    - name: Configure CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+
+    # 4. Build the static library
+    - name: Build the project
+      run: |
+        cd build
+        make -j$(nproc)
+
+    # 5. Package release artifacts
+    - name: Package release artifacts
+      run: |
+        mkdir -p release/include
+        mkdir -p release/src
+        mkdir -p release/third_party
+        mkdir -p release/tests
+        
+        # Copy project headers
+        cp include/*.hpp release/include/
+        
+        # Copy static library from src/ (where CMake now places it)
+        if [ -f "src/libundoPLC.a" ]; then
+          cp src/libundoPLC.a release/src/
+        elif [ -f "build/libundoPLC.a" ]; then
+          # Fallback: if library is still in build/
+          cp build/libundoPLC.a release/src/
+        else
+          echo "libundoPLC.a not found!"
+          ls -la src/ || echo "src/ directory not found"
+          ls -la build/ || echo "build/ directory not found"
+          exit 1
+        fi
+        
+        # Copy Boost (vendored dependency)
+        cp -r third_party/boost_1_91_0 release/third_party/
+        
+        # Copy tests directory (excluding build artifacts)
+        if [ -d "tests" ]; then
+          cp -r tests release/
+          # Remove any build directories inside tests
+          find release/tests -name "build" -type d -exec rm -rf {} + 2>/dev/null || true
+          find release/tests -name "CMakeCache.txt" -delete 2>/dev/null || true
+          find release/tests -name "CMakeFiles" -type d -exec rm -rf {} + 2>/dev/null || true
+          echo "Tests copied to release/"
+        else
+          echo "tests/ directory not found"
+        fi
+
+    # 6. Verify release structure
+    - name: Verify release structure
+      run: |
+        echo "=========================================="
+        echo "Release structure:"
+        echo "=========================================="
+        ls -la release/
+        echo ""
+        echo "--- include/ ---"
+        ls -la release/include/
+        echo ""
+        echo "--- src/ ---"
+        ls -la release/src/
+        echo ""
+        echo "--- third_party/ ---"
+        ls -la release/third_party/
+        echo ""
+        echo "--- tests/ ---"
+        ls -la release/tests/
+
+    # 7. Create archives
+    - name: Create archives
+      run: |
+        tar -czvf undoPLC-${{ github.ref_name }}.tar.gz -C release .
+        zip -r undoPLC-${{ github.ref_name }}.zip release/
+      env:
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+
+    # 8. Create GitHub Release
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          undoPLC-${{ github.ref_name }}.tar.gz
+          undoPLC-${{ github.ref_name }}.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
