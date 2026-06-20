@@ -3,80 +3,69 @@ project(undoPLC VERSION 0.1.0 LANGUAGES CXX)
 
 set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Option for building tests (default OFF)
 option(BUILD_TESTS "Build tests" OFF)
 
-# Include directories
+# ============================================================================
+#  Include directories (Boost from third_party)
+# ============================================================================
 set(UNDOPLC_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+set(BOOST_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/third_party/boost_1_91_0)
 
 # ============================================================================
-#  Compiler flags (conditional for cross-platform support)
+#  Output directories
 # ============================================================================
-if(MSVC)
-    # Visual Studio / MSVC on Windows
-    set(UNDOPLC_COMPILE_FLAGS
-        /W4           # Warning level 4 (similar to -Wall)
-        /utf-8        # UTF-8 support for source files
-    )
-    # Suppress warnings about "unsafe" CRT functions (fopen, strcpy, etc.)
-    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
-else()
-    # GCC / Clang / MinGW on Linux/macOS/Windows
-    set(UNDOPLC_COMPILE_FLAGS
-        -Wall         # Enable all warnings
-        -Wextra       # Enable extra warnings
-        -Wpedantic    # Strict ISO C++ compliance
-    )
-endif()
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src)
 
 # ============================================================================
-#  Static library (core compiler logic)
+#  Compiler flags (Linux only)
 # ============================================================================
-add_library(undoPLC_lib STATIC
-    src/*.cpp
+set(UNDOPLC_COMPILE_FLAGS
+    -Wall
+    -Wextra
+    -Wpedantic
+    -pthread
 )
 
-target_include_directories(undoPLC_lib PUBLIC
+# ============================================================================
+#  Static library (core real-time infrastructure)
+# ============================================================================
+add_library(undoPLC STATIC
+    src/undoSystem.cpp
+    src/undoLog.cpp
+    src/undoTasks.cpp
+)
+
+target_include_directories(undoPLC PUBLIC
     ${UNDOPLC_INCLUDE_DIR}
-)
-
-target_compile_options(undoPLC_lib PRIVATE
-    ${UNDOPLC_COMPILE_FLAGS}
-)
-
-# ============================================================================
-#  CLI executable (main compiler driver)
-# ============================================================================
-add_executable(undoPLC src/cli/main.cpp)
-
-target_link_libraries(undoPLC PRIVATE undoPLC_lib)
-
-target_include_directories(undoPLC PRIVATE
-    ${UNDOPLC_INCLUDE_DIR}
+    ${BOOST_INCLUDE_DIR}
 )
 
 target_compile_options(undoPLC PRIVATE
     ${UNDOPLC_COMPILE_FLAGS}
 )
 
-# ============================================================================
-#  Tests (optional, enabled with -DBUILD_TESTS=ON)
-# ============================================================================
-if(BUILD_TESTS)
-    enable_testing()
-    # Add test directory if you have unit tests
-    # add_subdirectory(tests)
-endif()
+target_link_libraries(undoPLC
+    PUBLIC
+    pthread
+    rt
+)
 
 # ============================================================================
 #  Installation
 # ============================================================================
-install(TARGETS undoPLC RUNTIME DESTINATION bin)
-install(TARGETS undoPLC_lib ARCHIVE DESTINATION lib)
+install(TARGETS undoPLC
+    ARCHIVE DESTINATION src
+    LIBRARY DESTINATION src
+    RUNTIME DESTINATION src
+)
+
 install(DIRECTORY include/ DESTINATION include)
 
 # ============================================================================
@@ -87,7 +76,7 @@ include(CPack)
 set(CPACK_GENERATOR "TGZ;ZIP")
 set(CPACK_PACKAGE_NAME "undoPLC")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Structured Text to C++ Compiler")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Multi-threaded PLC infrastructure with deterministic real-time execution")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 set(CPACK_PACKAGE_VENDOR "undoRT")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
@@ -99,14 +88,11 @@ set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 find_package(Doxygen QUIET)
 
 if(DOXYGEN_FOUND)
-    # Use the existing Doxyfile in the source directory
     set(DOXYFILE_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile)
     set(DOXYFILE_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
     
-    # Copy Doxyfile to build directory (or use it directly)
     configure_file(${DOXYFILE_IN} ${DOXYFILE_OUT} COPYONLY)
     
-    # Custom target for generating documentation
     add_custom_target(docs
         ${DOXYGEN_EXECUTABLE} ${DOXYFILE_OUT}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -120,6 +106,17 @@ else()
 endif()
 
 # ============================================================================
+#  Tests (optional)
+# ============================================================================
+if(BUILD_TESTS)
+    enable_testing()
+    
+    if(EXISTS ${CMAKE_SOURCE_DIR}/tests)
+        add_subdirectory(tests)
+    endif()
+endif()
+
+# ============================================================================
 #  Print configuration summary
 # ============================================================================
 message(STATUS "")
@@ -130,6 +127,8 @@ message(STATUS "  C++ Standard:      C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler:          ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")
 message(STATUS "  Install prefix:    ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "  Boost include:     ${BOOST_INCLUDE_DIR}")
+message(STATUS "  Library output:    ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}")
 if(DOXYGEN_FOUND)
     message(STATUS "  Documentation:     Enabled")
 else()
