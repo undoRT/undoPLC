@@ -5,14 +5,15 @@ on:
     branches:
       - main
     paths:
-      # Only re-run when source or docs config actually changes
       - 'include/**'
       - 'src/**'
       - 'README.md'
       - 'Doxyfile'
       - '.github/workflows/docs.yml'
+  workflow_dispatch:
 
-  workflow_dispatch:   # Allow manual trigger from Actions tab
+env:
+  DOCS_DIR: docs/html
 
 jobs:
   doxygen:
@@ -20,11 +21,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout undoPLC source
       - name: Checkout undoPLC
         uses: actions/checkout@v4
 
-      # 2. Install Doxygen + Graphviz (for call graphs)
       - name: Install Doxygen and Graphviz
         run: |
           sudo apt-get update -qq
@@ -32,24 +31,31 @@ jobs:
             doxygen \
             graphviz
 
-      # 3. Generate HTML documentation
       - name: Generate Doxygen HTML
-        run: doxygen Doxyfile
-        # Output goes to docs/html/ as configured in Doxyfile (OUTPUT_DIRECTORY = docs)
+        run: doxygen Doxyfile 2>&1 | tee doxygen.log
+        continue-on-error: true
 
-      # 4. Verify output exists
+      - name: Check for Doxygen warnings
+        run: |
+          if grep -q -i "warning" doxygen.log; then
+            echo "::warning::Doxygen produced warnings — check the log"
+            grep -i "warning" doxygen.log | head -20
+          fi
+
+      - name: Add version info
+        run: |
+          mkdir -p ${{ env.DOCS_DIR }}
+          echo "Version: ${{ github.sha }}" > ${{ env.DOCS_DIR }}/version.txt
+          echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> ${{ env.DOCS_DIR }}/version.txt
+
       - name: Verify output
         run: |
-          if [ ! -f docs/html/index.html ]; then
-            echo "::error::Doxygen did not produce docs/html/index.html"
+          if [ ! -f ${{ env.DOCS_DIR }}/index.html ]; then
+            echo "::error::Doxygen did not produce ${{ env.DOCS_DIR }}/index.html"
             exit 1
           fi
-          echo "Doxygen output:"
-          ls docs/html/ | head -20
+          echo "Doxygen output: $(ls ${{ env.DOCS_DIR }} | wc -l) files"
 
-      #  5. Checkout undort.github.io into a subdirectory
-      #     Uses a PAT stored as DOCS_DEPLOY_TOKEN secret in the undoPLC repo.
-      #     The token needs: Contents (read + write) on undoRT/undort.github.io
       - name: Checkout undort.github.io
         uses: actions/checkout@v4
         with:
@@ -57,35 +63,25 @@ jobs:
           token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           path: gh-pages
 
-      # 6. Copy generated HTML -> undoPLC/api/ in the pages repo
       - name: Copy docs into undoPLC/api/
         run: |
-          # Remove old API docs, keep everything else in undoPLC/
           rm -rf gh-pages/undoPLC/api
           mkdir -p gh-pages/undoPLC/api
+          cp -r ${{ env.DOCS_DIR }}/. gh-pages/undoPLC/api/
+          echo "Copied files: $(ls gh-pages/undoPLC/api/ | wc -l) files"
 
-          # Copy the generated HTML
-          cp -r docs/html/. gh-pages/undoPLC/api/
-
-          echo "Copied files:"
-          ls gh-pages/undoPLC/api/ | head -20
-
-      # 7. Commit and push
       - name: Commit and push to undort.github.io
         run: |
           cd gh-pages
-
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git add undoPLC/api/
 
-          # Only commit if there are actual changes
           if git diff --cached --quiet; then
             echo "No changes to API docs — skipping commit."
           else
             COMMIT_SHA="${{ github.sha }}"
             git commit -m "docs(undoPLC): update API reference from ${COMMIT_SHA:0:7}"
             git push
-            echo "Docs deployed to undort.com/undoPLC/api/"
+            echo "✅ Docs deployed to https://undort.com/undoPLC/api/"
           fi

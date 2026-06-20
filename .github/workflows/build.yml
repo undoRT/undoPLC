@@ -1,0 +1,94 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake g++
+
+    - name: Create build directory
+      run: mkdir -p build
+
+    - name: Configure CMake
+      run: |
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+
+    - name: Build the project
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Create release directory structure
+      run: |
+        mkdir -p release/bin
+        mkdir -p release/include
+        mkdir -p release/lib
+        
+        # Copia l'eseguibile
+        cp build/undoPLC release/bin/
+        
+        # Copia i file header del progetto
+        cp include/*.hpp release/include/
+        
+        # Copia la libreria statica
+        cp build/libundoPLC.a release/lib/
+        
+        # Copia l'intera directory third_party
+        cp -r third_party release/include/
+        
+        # Crea il symlink nella release (se non esiste già)
+        cd release/include/third_party
+        ln -sf boost_1_91_0/boost boost
+
+    - name: Verify release structure
+      run: |
+        echo "Verifica struttura release:"
+        ls -la release/
+        ls -la release/bin/
+        ls -la release/include/
+        ls -la release/lib/
+        echo "Verifica symlink Boost:"
+        ls -la release/include/third_party/
+
+    - name: Create tarball
+      run: |
+        tar -czvf undoPLC-release-${{ github.ref_name }}.tar.gz -C release .
+      env:
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+
+    - name: Create zip archive
+      run: |
+        zip -r undoPLC-release-${{ github.ref_name }}.zip release/
+
+    - name: Upload release assets
+      uses: actions/upload-artifact@v4
+      with:
+        name: undoPLC-release-${{ github.ref_name }}
+        path: |
+          undoPLC-release-${{ github.ref_name }}.tar.gz
+          undoPLC-release-${{ github.ref_name }}.zip
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          undoPLC-release-${{ github.ref_name }}.tar.gz
+          undoPLC-release-${{ github.ref_name }}.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
