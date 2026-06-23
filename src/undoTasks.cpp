@@ -85,6 +85,10 @@ bool UndoMasterTaskBase::start(uint16_t prio)
       return false;
    }
 
+   // Initialize the starting value of latch counter
+   int totalThreads = 1 + static_cast<int>(_syncVars.workers.size());
+   _registrationLatch = std::make_unique<std::latch>(totalThreads);
+
    _running.store(true, std::memory_order_release);
 
    // Spawn the native underlying thread context using a lambda execution binding
@@ -105,6 +109,10 @@ bool UndoMasterTaskBase::start(uint16_t prio)
       if (pthread_setschedparam(currentThread, SCHED_FIFO, &param) != 0) {
          UndoLog::getInstance().logRT(LogDomain::PLC, LOG_ERR, "UndoMasterTaskBase: Failed to set SCHED_FIFO priority %u", _prio);
       }
+
+      // Register this task and decrement the latch
+      UndoLog::getInstance().registerThread();
+      _registrationLatch->count_down();
 
       // Jump into the cyclic execution engine
       this->run();
@@ -145,7 +153,6 @@ void UndoMasterTaskBase::run()
 {
    UndoSys& sys = UndoSys::getInstance();
    UndoLog& logger = UndoLog::getInstance();
-   logger.registerThread();
 
    int totalWorkers = static_cast<int>(_syncVars.workers.size());
    uint64_t cycleStartTsc = 0;
@@ -383,6 +390,10 @@ bool UndoWorkerTaskBase::start()
          UndoLog::getInstance().logRT(LogDomain::PLC, LOG_ERR, "%s: Failed to set SCHED_FIFO priority %u", _taskName.c_str(), _prio);
       }
 
+      // Register this task and decrement the latch
+      UndoLog::getInstance().registerThread();
+      _master->countDownRegistration();
+
       // Invoke the internal execution framework
       this->run();
    });
@@ -407,7 +418,6 @@ void UndoWorkerTaskBase::run()
 {
    UndoSys& sys = UndoSys::getInstance();
    UndoLog& logger = UndoLog::getInstance();
-   logger.registerThread();
 
    if (!_master) {
       UndoLog::getInstance().logRT(LogDomain::PLC, LOG_ERR, "%s: Cannot run without master!", _taskName.c_str());
