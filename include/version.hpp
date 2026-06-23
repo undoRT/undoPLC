@@ -14,7 +14,7 @@
 // Version numbers following Semantic Versioning (semver.org)
 #define UNDOPLC_VERSION_MAJOR  0
 #define UNDOPLC_VERSION_MINOR  1
-#define UNDOPLC_VERSION_PATCH  0
+#define UNDOPLC_VERSION_PATCH  1
 #define UNDOPLC_VERSION_PREREL ""
 
 // Helper macros for stringification (workaround for MSVC)

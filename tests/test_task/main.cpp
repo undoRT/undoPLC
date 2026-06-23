@@ -79,11 +79,11 @@ class DemoMasterTask : public UndoMasterTaskBase
 public:
    using UndoMasterTaskBase::UndoMasterTaskBase;
 
-   // CRITICO: deve essere la PRIMA istruzione del distruttore, prima che la
-   // vtable regredisca a UndoMasterTaskBase (che ha readInputBus/writeOutputBus/
-   // safeStopHandler come pure virtual). Senza questa chiamata esplicita,
-   // il thread RT può ancora invocare una di queste funzioni nella finestra
-   // di race aperta da ~UndoMasterTaskBase() -> "pure virtual method called".
+   /*
+    * ATTENTION: shutdownAndJoin MUST be the first destructor instruction.
+    * Before that vtable calls the UndoMasterTaskBase destructor.
+    * Without this explicit call, a pure virtual method will called.
+    */
    ~DemoMasterTask() override { shutdownAndJoin(); }
 
 protected:
@@ -145,7 +145,7 @@ int main(int argc, char* argv[])
       }
    }
 
-   // 1. Create the central asynchronous execution context (main thread, non-RT)
+   // Create the central asynchronous execution context (main thread, non-RT)
    boost::asio::io_context ioc;
 
    UndoSys& sys = UndoSys::getInstance();
@@ -212,9 +212,13 @@ int main(int argc, char* argv[])
       }
    }
 
+   // Wait the start of all the thread (master wait for all the task)
+   master.waitAllRegistered();
+   logger.closeRegistration();
+
    logger.logRT(LogDomain::PLC, LOG_INFO, "Master on core %u | %zu worker(s) spawned", master.getCpuId(), workers.size());
 
-   // 2. Graceful shutdown on Ctrl+C / SIGTERM, handled reactively on the main thread.
+   // Graceful shutdown on Ctrl+C / SIGTERM, handled reactively on the main thread.
    boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
    signals.async_wait([&](const boost::system::error_code& ec, int signalNumber) {
       if (!ec) {
@@ -234,7 +238,7 @@ int main(int argc, char* argv[])
 
    std::cout << "[Main] RT threads running. Press Ctrl+C to stop." << std::endl;
 
-   // 3. Main thread blocks here servicing the logger reactively (0% busy-poll).
+   // Main thread blocks here servicing the logger reactively (0% busy-poll).
    ioc.run();
 
    // Destruction order: 'workers' (declared after 'master') is destroyed FIRST,

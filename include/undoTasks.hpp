@@ -12,6 +12,7 @@
 #include "undoLog.hpp"
 #include "undoSystem.hpp"
 #include "undoMutex.hpp"
+#include <latch>
 #include <condition_variable>
 
 class UndoWorkerTaskBase;
@@ -27,6 +28,9 @@ struct SyncVars
    UndoMutex syncMutex;
 };
 
+/**
+ * @brief Basic struct to make some diag
+ */
 struct DiagVars
 {
    uint32_t jitterMax{0};
@@ -59,6 +63,8 @@ public:
    inline uint64_t getCurrentCycleTimeNs() const { return _currentCycleTimeNs.load(std::memory_order_acquire); }
    inline uint64_t getCurrentCycleTimeUs() const { return _currentCycleTimeNs.load(std::memory_order_acquire) / 1000ULL; }
    inline uint64_t getCurrentCycleTimeMs() const { return _currentCycleTimeNs.load(std::memory_order_acquire) / 1000000ULL; }
+   void waitAllRegistered() { _registrationLatch->wait(); }
+   void countDownRegistration() { _registrationLatch->count_down(); }
 
 protected:
    virtual void readInputBus() = 0;
@@ -81,6 +87,7 @@ private:
    std::thread _thread;
    std::atomic<uint64_t> _currentCycleTimeNs{0};   // Absolute time aligned with the cycle
    static constexpr int _STARTUP_DELAY_CYCLES = 5; // Number of cycle to wait before starting
+   std::unique_ptr<std::latch> _registrationLatch; // A C++20 safe thread counter with wait method
 };
 
 /**

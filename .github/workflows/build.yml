@@ -110,8 +110,9 @@ jobs:
       env:
         GITHUB_REF_NAME: ${{ github.ref_name }}
 
-    # 8. Create GitHub Release
+    # 8. Create GitHub Release (only for tags)
     - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |
