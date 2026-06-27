@@ -205,9 +205,10 @@ void UndoMasterTaskBase::run()
          }
       }
       // Ultra-precise hardware sleeping till next period block
-      int ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &nextWakeup, nullptr);
+      int ret = waitCycle(nextWakeup);
+
       if (ret != 0) [[unlikely]] {
-         logger.logRT(LogDomain::PLC, LOG_WARNING, "UndoMasterTaskBase: clock_nanosleep interrupted or errored: %d", ret);
+         logger.logRT(LogDomain::PLC, LOG_WARNING, "UndoMasterTaskBase: waitCycle interrupted or errored: %d", ret);
          continue;
       }
       // Timestamp for execution time diag
@@ -268,6 +269,49 @@ void UndoMasterTaskBase::run()
 }
 
 /**
+ * @brief Method used to wait until the next cycle
+ * @details
+ * If the _ioBus (undoCore::IoBus) member is implemented, then it is used this way to wait
+ * the next cycle, in order to wait according the bus rule.
+ * @param nextWakeup: Useful only if IoBus memeber is not implemented.
+ * @return An error code if something got wrong, 0 otherwise.
+ */
+int UndoMasterTaskBase::waitCycle(timespec& nextWakeup)
+{
+   if (_ioBus) {
+      return _ioBus->waitCycle(getCycleUs()) ? 0 : _ioBus->lastError();
+   }
+
+   return clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &nextWakeup, nullptr);
+}
+
+/**
+ * @brief Virtual method to implement if _ioBus (undoCore::IoBus) member is not implemented.
+ * @details
+ * If there is an implemention of _ioBus, then this method should be not override.
+ * This becuase it is supposed that _ioBus implements the copyIn in the waitCycle function.
+ */
+void UndoMasterTaskBase::readInputBus()
+{
+   // No-op when bus is present: copyIn() is guaranteed by IoBus::waitCycle()
+   // contract before returning. Without bus, inputs are not updated (standalone mode).
+   return;
+}
+
+/**
+ * @brief Virtual method to implement if _ioBus (undoCore::IoBus) member is not implemented.
+ * @details
+ * If there is an implemention of _ioBus, then this method should be not override.
+ */
+void UndoMasterTaskBase::writeOutputBus()
+{
+   if (_ioBus) {
+      _ioBus->notifyDone();
+   }
+   // Without bus: outputs are computed but not sent anywhere (standalone mode)
+}
+
+/**
  * @brief Default fallback implementation for cycle overrun watchdogs.
  */
 void UndoMasterTaskBase::onCycleTimeout()
@@ -278,16 +322,6 @@ void UndoMasterTaskBase::onCycleTimeout()
    safeStopHandler();
    stop();
 }
-
-/**
- * @brief DEVE essere chiamato dalla classe più derivata, come PRIMA istruzione
- * del proprio distruttore, prima che qualunque membro derivato venga distrutto.
- *
- * Il thread RT chiama funzioni virtuali su `this` per tutta la sua vita. Se è
- * ancora in esecuzione quando ~UndoMasterTaskBase() viene eseguito, il tipo dinamico
- * dell'oggetto è GIA' regredito a UndoMasterTaskBase (regola di distruzione C++),
- * quindi una chiamata virtuale concorrente atterra su uno stub pure-virtual.
- */
 
 /**
  * @brief This MUST be called by the most derived class as the FIRST statement in its own

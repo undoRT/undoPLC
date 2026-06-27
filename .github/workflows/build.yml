@@ -20,9 +20,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout source code
+    # 1. Checkout source code with submodules
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        submodules: recursive  # IMPORTANTE: inizializza i submodule
+        fetch-depth: 0         # Per avere tutti i tag e la storia
 
     # 2. Install system dependencies
     - name: Install dependencies
@@ -35,7 +38,9 @@ jobs:
       run: |
         mkdir -p build
         cd build
-        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTS=OFF \
+              ..
 
     # 4. Build the static library
     - name: Build the project
@@ -70,6 +75,18 @@ jobs:
         # Copy Boost (vendored dependency)
         cp -r third_party/boost_1_91_0 release/third_party/
         
+        # Copy undoCore (header-only submodule)
+        if [ -d "third_party/undoCore" ]; then
+          cp -r third_party/undoCore release/third_party/
+          echo "undoCore copied to release/third_party/"
+          
+          # Mostra la struttura di undoCore per verifica
+          echo "undoCore structure:"
+          ls -la release/third_party/undoCore/
+        else
+          echo "WARNING: third_party/undoCore not found"
+        fi
+        
         # Copy tests directory (excluding build artifacts)
         if [ -d "tests" ]; then
           cp -r tests release/
@@ -99,6 +116,14 @@ jobs:
         echo "--- third_party/ ---"
         ls -la release/third_party/
         echo ""
+        if [ -d "release/third_party/undoCore" ]; then
+          echo "--- third_party/undoCore/ ---"
+          ls -la release/third_party/undoCore/
+          echo ""
+          echo "--- third_party/undoCore/include/ ---"
+          ls -la release/third_party/undoCore/include/
+          echo ""
+        fi
         echo "--- tests/ ---"
         ls -la release/tests/
 

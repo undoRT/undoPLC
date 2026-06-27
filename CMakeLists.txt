@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(undoPLC VERSION 0.1.1 LANGUAGES CXX)
+project(undoPLC VERSION 0.2.0 LANGUAGES CXX)
 
 set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
 
@@ -104,6 +104,13 @@ if(DOXYGEN_FOUND)
 else()
     message(STATUS "Doxygen: Disabled (install doxygen to generate API documentation)")
 endif()
+
+# If it comes from add_subdirectory (meta-repo undoRT) include it, otherwise third_party submodule
+find_package(undoCore QUIET)
+if(NOT undoCore_FOUND)
+    add_subdirectory(third_party/undoCore)
+endif()
+target_link_libraries(undoPLC PRIVATE undoCore::undoCore)
 
 # ============================================================================
 #  Tests (optional)

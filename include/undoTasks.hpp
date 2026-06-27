@@ -14,6 +14,8 @@
 #include "undoMutex.hpp"
 #include <latch>
 #include <condition_variable>
+#include <undoCore/ioBus.hpp>
+#include <undoCore/processImage.hpp>
 
 class UndoWorkerTaskBase;
 
@@ -39,6 +41,7 @@ struct DiagVars
    uint32_t execMin{0xFFFFFFFF};
 };
 
+// clang-format off
 /**
  * @class UndoMasterTaskBase
  * @brief Base class responsible for fieldbus orchestration and worker synchronization.
@@ -65,10 +68,12 @@ public:
    inline uint64_t getCurrentCycleTimeMs() const { return _currentCycleTimeNs.load(std::memory_order_acquire) / 1000000ULL; }
    void waitAllRegistered() { _registrationLatch->wait(); }
    void countDownRegistration() { _registrationLatch->count_down(); }
+   void setIoBus(undoCore::IoBus* ioBus) { _ioBus = ioBus; }
 
 protected:
-   virtual void readInputBus() = 0;
-   virtual void writeOutputBus() = 0;
+   int waitCycle(timespec& nextWakeup);
+   virtual void readInputBus();
+   virtual void writeOutputBus();
    virtual void safeStopHandler() = 0;
    virtual void onCycleTimeout();
    virtual bool runStartup() { return true; }
@@ -76,11 +81,11 @@ protected:
    void shutdownAndJoin();
    std::string _taskName{""};
    uint16_t _cpuId, _prio;
-
 private:
    void run();
 
    uint64_t _cycleTimeNs;
+   undoCore::IoBus *_ioBus{nullptr};
    std::atomic<bool> _running{false};
    SyncVars _syncVars;
    DiagVars _diagVars;
@@ -136,3 +141,4 @@ private:
    DiagVars _diagVars;
    std::thread _thread;
 };
+// clang-format on

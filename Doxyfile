@@ -1,7 +1,7 @@
 
 PROJECT_NAME           = "undoPLC"
 PROJECT_BRIEF          = "Open source multi-threaded PLC infrastructure designed for the undoRT ecosystem."
-PROJECT_LOGO           = 
+PROJECT_LOGO           = undoPLC_logo.png
 OUTPUT_DIRECTORY       = docs
 INPUT                  = include/ src/ README.md
 RECURSIVE              = YES
