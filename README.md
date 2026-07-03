@@ -1,8 +1,9 @@
 # UndoPLC
 
-[![C++17](https://img.shields.io/badge/C%252B%2B017-blue.svg)](https://isocpp.org/)
+![C++17](https://img.shields.io/badge/C++17-blue.svg)
 [![License: GSL v3](https://img.shields.io/badge/License-GSLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](https://undort.com/undoPLC/api/)
+[![Build](https://github.com/undoRT/undoPLC/actions/workflows/build.yml/badge.svg)](https://github.com/undoRT/undoPLC/actions/workflows/build.yml)
 
 Multi-threaded PLC infrastructure with deterministic real-time execution.
 
