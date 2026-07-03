@@ -36,7 +36,7 @@ public:
    }
 
    // Frequency Management
-   bool setCpuNominalFrequency(const std::vector<int>& cores);
+   int setCpuNominalFrequency(const std::vector<int>& cores);
    bool resetCpuFrequency(const std::vector<int>& cores);
    bool initTscFrequency();
    inline uint64_t readTsc(unsigned int* coreId) const { return __rdtscp(coreId); }
@@ -63,13 +63,14 @@ private:
    ~UndoSys() = default;
 
    // Members
-   std::vector<int> _isolatedCores;   // Vector of isolated cores (empty if there are not isolated cores)
-   std::vector<int> _onlineCores;     // Vector of online cores (empty if there are not online cores...wft)
-   std::vector<int> _sharedCores;     // Vector of shared cores (empty if there are not shared cores)
-   bool _isolatedCoresChecked{false}; // True if _isolatedCores already done
-   int _totNumCores{-1};              // Total number of cores
-   bool _sharedCoresChecked{false};   // True if _sharedCores already done
-   uint64_t _tscFrequencyHz{0};       // Global hardware constant for conversion
+   std::vector<int> _isolatedCores;    // Vector of isolated cores (empty if there are not isolated cores)
+   std::vector<int> _onlineCores;      // Vector of online cores (empty if there are not online cores...wft)
+   std::vector<int> _sharedCores;      // Vector of shared cores (empty if there are not shared cores)
+   bool _isolatedCoresChecked{false};  // True if _isolatedCores already done
+   int8_t _totNumCores{-1};            // Total number of cores
+   bool _sharedCoresChecked{false};    // True if _sharedCorescoreId already done
+   bool _isNominalFreqPossible{false}; // True if nominal frequency can be set for cores, false otherwise
+   uint64_t _tscFrequencyHz{0};        // Global hardware constant for conversion
 
    // Methods
    bool writeSysfsAttribute(const std::string& path, const std::string& value);

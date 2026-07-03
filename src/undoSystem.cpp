@@ -30,41 +30,57 @@ UndoSys::UndoSys()
 }
 
 /**
- * @brief Configures specific CPU cores to run at their nominal frequency using the performance governor.
- * @param cores Vector of CPU core IDs to be configured.
- * @return true if configuration succeeded for all specified cores, false otherwise.
+ * @brief Configures the specified CPU cores to run at their nominal frequency 
+ * using the performance governor.
+ *
+ * @details
+ * This function enforces a STRICT determinism contract:
+ * all requested cores must support frequency locking via base_frequency.
+ *
+ * The caller MUST only pass cores that are expected to be fully controllable.
+ *
+ * This is NOT a best-effort API:
+ * - if any core does not expose base_frequency, the operation is aborted
+ * - if any sysfs operation fails, the function fails immediately
+ *
+ * The goal is to guarantee deterministic CPU frequency behavior on all
+ * configured cores, which is required for real-time workloads.
+ *
+ * @param cores Vector of CPU core IDs to be configured (STRICT SET).
+ *
+ * @return
+ *  1  = success (all cores successfully locked to nominal frequency)
+ *  0  = unsupported platform or missing base_frequency for requested cores
+ * -1  = runtime error during configuration (sysfs/governor failure)
  */
-bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
+int UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
 {
    UndoLog& logger = UndoLog::getInstance();
-   bool ret = true;
 
    for (int coreId : cores) {
       std::string basePath = "/sys/devices/system/cpu/cpu" + std::to_string(coreId) + "/cpufreq/";
 
-      // 1. Read the hardware nominal base frequency
+      // Read the hardware nominal base frequency
       std::ifstream baseFreqFile(basePath + "base_frequency");
       std::string baseFreqVal;
 
       if (!baseFreqFile.is_open() || !(baseFreqFile >> baseFreqVal)) {
-         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Cannot read base_frequency for CPU %u", coreId);
-         ret = false;
-         continue;
+         logger.logRT(LogDomain::PLC, LOG_WARNING, "UndoSys: Cannot read base_frequency for CPU %d", coreId);
+         baseFreqFile.close();
+         return 0;
       }
       baseFreqFile.close();
 
-      // 2. Set governor to performance to ensure deterministic wake-up times
+      // Set governor to performance to ensure deterministic wake-up times
       if (!writeSysfsAttribute(basePath + "scaling_governor", "performance")) {
-         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to set performance governor on CPU %u", coreId);
-         ret = false;
-         continue;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to set performance governor on CPU %d", coreId);
+         return -1;
       }
 
-      // 3. Set max scaling frequency to nominal base frequency to clamp Turbo Boost
+      // Set max scaling frequency to nominal base frequency to clamp Turbo Boost
       if (!writeSysfsAttribute(basePath + "scaling_max_freq", baseFreqVal)) {
-         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to clamp Turbo Boost via scaling_max_freq on CPU %u", coreId);
-         ret = false;
-         continue;
+         logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to clamp Turbo Boost via scaling_max_freq on CPU %d", coreId);
+         return -1;
       }
 
       logger.logRT(LogDomain::PLC,
@@ -74,7 +90,8 @@ bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
                    (std::stod(baseFreqVal) / 1000000.0));
    }
 
-   return ret;
+   _isNominalFreqPossible = true;
+   return 1;
 }
 
 /**
@@ -84,8 +101,11 @@ bool UndoSys::setCpuNominalFrequency(const std::vector<int>& cores)
  */
 bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
 {
+   if (!_isNominalFreqPossible) {
+      return false;
+   }
+   
    UndoLog& logger = UndoLog::getInstance();
-   bool ret = true;
 
    for (int coreId : cores) {
       std::string basePath = "/sys/devices/system/cpu/cpu" + std::to_string(coreId) + "/cpufreq/";
@@ -96,29 +116,27 @@ bool UndoSys::resetCpuFrequency(const std::vector<int>& cores)
 
       if (!maxFreqFile.is_open() || !(maxFreqFile >> maxFreqVal)) {
          logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Cannot read cpuinfo_max_freq for CPU %u", coreId);
-         ret = false;
-         continue;
+         maxFreqFile.close();
+         return false;
       }
       maxFreqFile.close();
 
       // Restore maximum hardware scaling range to allow standard behavior/Turbo Boost
       if (!writeSysfsAttribute(basePath + "scaling_max_freq", maxFreqVal)) {
          logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to restore scaling_max_freq on CPU %u", coreId);
-         ret = false;
-         continue;
+         return false;
       }
 
       // Set governor back to powersave for standard OS power management
       if (!writeSysfsAttribute(basePath + "scaling_governor", "powersave")) {
          logger.logRT(LogDomain::PLC, LOG_ERR, "UndoSys: Failed to restore powersave governor on CPU %u", coreId);
-         ret = false;
-         continue;
+         return false;
       }
 
       logger.logRT(LogDomain::PLC, LOG_INFO, "UndoSys: CPU %u successfully restored to powersave governor.", coreId);
    }
 
-   return ret;
+   return true;
 }
 
 /**
@@ -296,7 +314,7 @@ int UndoSys::getTotalCpu()
    for (const auto& group : groups) {
       if (group.find("-") == std::string::npos) {
          // Single core entry (e.g., "0")
-         calculatedCores++;
+         ++calculatedCores;
          // Append online core
          _onlineCores.push_back(std::stoi(group));
       } else {

@@ -24,8 +24,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        submodules: recursive  # IMPORTANTE: inizializza i submodule
-        fetch-depth: 0         # Per avere tutti i tag e la storia
+        submodules: recursive
+        fetch-depth: 0
+
+    # 1.1: ensure submodules are fully initialized (extra safety)
+    - name: Init submodules
+      run: git submodule update --init --recursive
 
     # 2. Install system dependencies
     - name: Install dependencies
@@ -72,20 +76,16 @@ jobs:
           exit 1
         fi
         
-        # Copy Boost (vendored dependency)
-        cp -r third_party/boost_1_91_0 release/third_party/
-        
-        # Copy undoCore (header-only submodule)
-        if [ -d "third_party/undoCore" ]; then
-          cp -r third_party/undoCore release/third_party/
-          echo "undoCore copied to release/third_party/"
-          
-          # Mostra la struttura di undoCore per verifica
-          echo "undoCore structure:"
-          ls -la release/third_party/undoCore/
+        # Copy ALL third_party (includes submodules + vendored dependencies)
+        if [ -d "third_party" ]; then
+          rsync -a third_party/ release/third_party/
+          echo "third_party fully copied (including submodules)"
         else
-          echo "WARNING: third_party/undoCore not found"
+          echo "WARNING: third_party not found"
         fi
+        
+        # Remove git metadata from vendor (important for clean release)
+        find release/third_party -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
         
         # Copy tests directory (excluding build artifacts)
         if [ -d "tests" ]; then

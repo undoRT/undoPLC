@@ -169,8 +169,8 @@ int main(int argc, char* argv[])
       return 1;
    }
 
-   bool setSuccess = sys.setCpuNominalFrequency(isolated);
-   if (!setSuccess) {
+   int setSuccess = sys.setCpuNominalFrequency(isolated);
+   if (setSuccess == -1) {
       std::cerr << "[ERROR] For some reason is not possible to set CPU nominal frequency to isolated CPUs!" << std::endl;
       ioc.run();
       return 1;
@@ -226,11 +226,13 @@ int main(int argc, char* argv[])
          // master.stop() also propagates _running=false to every registered worker
          // and notifies both condition variables to break any blocked wait.
          master.stop();
-         bool resetSuccess = sys.resetCpuFrequency(isolated);
-         if (resetSuccess) {
-            std::cout << "-> SUCCESS: System power states restored correctly." << std::endl;
-         } else {
-            std::cerr << "-> ERROR: Failed to reset some cores back to powersave!" << std::endl;
+         if (setSuccess) {
+            bool resetSuccess = sys.resetCpuFrequency(isolated);
+            if (resetSuccess) {
+               std::cout << "-> SUCCESS: System power states restored correctly." << std::endl;
+            } else {
+               std::cerr << "-> ERROR: Failed to reset some cores back to powersave!" << std::endl;
+            }
          }
          ioc.stop();
       }

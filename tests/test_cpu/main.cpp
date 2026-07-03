@@ -86,8 +86,8 @@ int main(int argc, char* argv[])
    std::cout << "\n[Test] Attempting to lock isolated cores to nominal frequency..." << std::endl;
    std::cout << "(Note: This will fail if not running with sudo/root privileges)" << std::endl;
 
-   bool setSuccess = systemManager.setCpuNominalFrequency(isolatedCores);
-   if (setSuccess) {
+   int setSuccess = systemManager.setCpuNominalFrequency(isolatedCores);
+   if (setSuccess == 1) {
       std::cout << "-> SUCCESS: Isolated cores are locked. Sleeping for 5 seconds to allow verification..." << std::endl;
       std::cout << "   (You can run 'watch -n 0.1 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor' in another terminal)"
                 << std::endl;

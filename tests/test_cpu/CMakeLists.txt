@@ -10,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ============================================================================
 set(UNDOPLC_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/../../include)
 set(BOOST_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/../../third_party/boost_1_91_0)
+set(CORE_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/../../third_party/undoCore/include)
+
 
 # ============================================================================
 #  Compiler flags
@@ -54,6 +56,7 @@ add_executable(test_undoPLC
 target_include_directories(test_undoPLC PRIVATE
     ${UNDOPLC_INCLUDE_DIR}
     ${BOOST_INCLUDE_DIR}
+    ${CORE_INCLUDE_DIR}
 )
 
 target_compile_options(test_undoPLC PRIVATE
