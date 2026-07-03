@@ -50,38 +50,39 @@ jobs:
 
       - name: Verify output
         run: |
+          set -e
+
           if [ ! -f ${{ env.DOCS_DIR }}/index.html ]; then
-            echo "::error::Doxygen did not produce ${{ env.DOCS_DIR }}/index.html"
+            echo "::error::Doxygen did not produce index.html"
             exit 1
           fi
-          echo "Doxygen output: $(ls ${{ env.DOCS_DIR }} | wc -l) files"
 
-      - name: Checkout undort.github.io
+          echo "Doxygen files: $(find ${{ env.DOCS_DIR }} | wc -l)"
+
+      - name: Checkout docs repo
         uses: actions/checkout@v4
         with:
           repository: undoRT/undort.github.io
           token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           path: gh-pages
 
-      - name: Copy docs into undoPLC/api/
+      - name: Deploy API docs
         run: |
+          set -e
+
           rm -rf gh-pages/undoPLC/api
           mkdir -p gh-pages/undoPLC/api
           cp -r ${{ env.DOCS_DIR }}/. gh-pages/undoPLC/api/
-          echo "Copied files: $(ls gh-pages/undoPLC/api/ | wc -l) files"
 
-      - name: Commit and push to undort.github.io
-        run: |
           cd gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add undoPLC/api/
 
           if git diff --cached --quiet; then
-            echo "No changes to API docs — skipping commit."
+            echo "No changes"
           else
-            COMMIT_SHA="${{ github.sha }}"
-            git commit -m "docs(undoPLC): update API reference from ${COMMIT_SHA:0:7}"
+            git commit -m "docs(undoPLC): update API ${{ github.sha }}"
             git push
-            echo "✅ Docs deployed to https://undort.com/undoPLC/api/"
           fi

@@ -8,9 +8,8 @@ on:
       - 'feature/*'
     tags:
       - 'v*'
-  workflow_dispatch:  # Allow manual trigger from Actions tab
+  workflow_dispatch:
 
-# Add permissions for creating releases
 permissions:
   contents: write
   packages: write
@@ -20,24 +19,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout source code with submodules
+    # 1. Checkout code (with submodules)
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
         fetch-depth: 0
 
-    # 1.1: ensure submodules are fully initialized (extra safety)
+    # 2. Ensure submodules are fully initialized
     - name: Init submodules
       run: git submodule update --init --recursive
 
-    # 2. Install system dependencies
+    # 3. Install dependencies
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake g++ libboost-all-dev
+        sudo apt-get install -y cmake g++ libboost-all-dev rsync
 
-    # 3. Configure CMake
+    # 4. Configure CMake
     - name: Configure CMake
       run: |
         mkdir -p build
@@ -46,105 +45,69 @@ jobs:
               -DBUILD_TESTS=OFF \
               ..
 
-    # 4. Build the static library
-    - name: Build the project
+    # 5. Build
+    - name: Build project
       run: |
         cd build
         make -j$(nproc)
 
-    # 5. Package release artifacts
+    # 6. Package release artifacts (SELF-CONTAINED)
     - name: Package release artifacts
       run: |
+        set -e
+
         mkdir -p release/include
         mkdir -p release/src
         mkdir -p release/third_party
         mkdir -p release/tests
-        
-        # Copy project headers
+
+        # Headers
         cp include/*.hpp release/include/
-        
-        # Copy static library from src/ (where CMake now places it)
+
+        # Library
         if [ -f "src/libundoPLC.a" ]; then
           cp src/libundoPLC.a release/src/
         elif [ -f "build/libundoPLC.a" ]; then
-          # Fallback: if library is still in build/
           cp build/libundoPLC.a release/src/
         else
-          echo "libundoPLC.a not found!"
-          ls -la src/ || echo "src/ directory not found"
-          ls -la build/ || echo "build/ directory not found"
+          echo "ERROR: libundoPLC.a not found"
           exit 1
         fi
-        
-        # Copy ALL third_party (includes submodules + vendored dependencies)
+
+        # FULL vendor snapshot (submodules included)
         if [ -d "third_party" ]; then
           rsync -a third_party/ release/third_party/
-          echo "third_party fully copied (including submodules)"
-        else
-          echo "WARNING: third_party not found"
         fi
-        
-        # Remove git metadata from vendor (important for clean release)
-        find release/third_party -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
-        
-        # Copy tests directory (excluding build artifacts)
+
+        # Remove git metadata
+        find release/third_party -type d -name ".git" -exec rm -rf {} + || true
+
+        # Tests
         if [ -d "tests" ]; then
           cp -r tests release/
-          # Remove any build directories inside tests
-          find release/tests -name "build" -type d -exec rm -rf {} + 2>/dev/null || true
-          find release/tests -name "CMakeCache.txt" -delete 2>/dev/null || true
-          find release/tests -name "CMakeFiles" -type d -exec rm -rf {} + 2>/dev/null || true
-          echo "Tests copied to release/"
-        else
-          echo "tests/ directory not found"
+          find release/tests -name "build" -type d -exec rm -rf {} + || true
+          find release/tests -name "CMakeFiles" -type d -exec rm -rf {} + || true
         fi
 
-    # 6. Verify release structure
-    - name: Verify release structure
+    # 7. Verify structure
+    - name: Verify release
       run: |
-        echo "=========================================="
-        echo "Release structure:"
-        echo "=========================================="
-        ls -la release/
-        echo ""
-        echo "--- include/ ---"
-        ls -la release/include/
-        echo ""
-        echo "--- src/ ---"
-        ls -la release/src/
-        echo ""
-        echo "--- third_party/ ---"
-        ls -la release/third_party/
-        echo ""
-        if [ -d "release/third_party/undoCore" ]; then
-          echo "--- third_party/undoCore/ ---"
-          ls -la release/third_party/undoCore/
-          echo ""
-          echo "--- third_party/undoCore/include/ ---"
-          ls -la release/third_party/undoCore/include/
-          echo ""
-        fi
-        echo "--- tests/ ---"
-        ls -la release/tests/
+        echo "=== RELEASE CONTENTS ==="
+        find release -maxdepth 3
 
-    # 7. Create archives
+    # 8. Create archives
     - name: Create archives
       run: |
         tar -czvf undoPLC-${{ github.ref_name }}.tar.gz -C release .
         zip -r undoPLC-${{ github.ref_name }}.zip release/
-      env:
-        GITHUB_REF_NAME: ${{ github.ref_name }}
 
-    # 8. Create GitHub Release (only for tags)
-    - name: Create GitHub Release
+    # 9. GitHub Release
+    - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |
           undoPLC-${{ github.ref_name }}.tar.gz
           undoPLC-${{ github.ref_name }}.zip
-        draft: false
-        prerelease: false
-        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
