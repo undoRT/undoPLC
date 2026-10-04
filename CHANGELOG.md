@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-04
+
+### Changed
+
+- Nested `third_party/undoCore` submodule moved to v0.2.4, which lowers its
+  INTERFACE compile feature from `cxx_std_20` to `cxx_std_17`. undoCore had no
+  C++20 construct to begin with, but as an INTERFACE requirement it forced every
+  consumer to C++20, so undoTasks.cpp was still being compiled at C++20 in a
+  CMake build even after 0.2.2. It now compiles at C++17 for real.
+
 ## [0.2.2] - 2026-10-04
 
 ### Added
@@ -97,7 +107,8 @@ This is the release that made C++20 a requirement, through `std::latch`.
 - `UndoLog` with multi-domain deferred logging.
 - CPU core handling, and vendored Boost and `tsc_freq_khz` under `third_party/`.
 
-[Unreleased]: https://github.com/undoRT/undoPLC/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/undoRT/undoPLC/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/undoRT/undoPLC/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/undoRT/undoPLC/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/undoRT/undoPLC/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/undoRT/undoPLC/compare/v0.1.1...v0.2.0

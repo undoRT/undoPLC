@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(undoPLC VERSION 0.2.2 LANGUAGES CXX)
+project(undoPLC VERSION 0.2.3 LANGUAGES CXX)
 
 set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
 
