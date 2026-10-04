@@ -55,12 +55,20 @@ tests/*.hpp
 # Build artifacts
 *.o
 *.obj
+*.a
 *.exe
 *.dll
 *.so
 *.dylib
 undoPLC
+test_undoPLC
+test_undoLatch
 CMakeCache.txt
+
+# CMake writes libundoPLC.a and the test binaries into src/ (see
+# CMAKE_ARCHIVE_OUTPUT_DIRECTORY), even for an out-of-tree build.
+src/libundoPLC.a
+src/test_*
 
 *.notrack
 clearBeforePush.sh

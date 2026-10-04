@@ -12,7 +12,7 @@
 #include "undoLog.hpp"
 #include "undoSystem.hpp"
 #include "undoMutex.hpp"
-#include <latch>
+#include "undoLatch.hpp"
 #include <condition_variable>
 #include <undoCore/ioBus.hpp>
 #include <undoCore/processImage.hpp>
@@ -92,7 +92,7 @@ private:
    std::thread _thread;
    std::atomic<uint64_t> _currentCycleTimeNs{0};   // Absolute time aligned with the cycle
    static constexpr int _STARTUP_DELAY_CYCLES = 5; // Number of cycle to wait before starting
-   std::unique_ptr<std::latch> _registrationLatch; // A C++20 safe thread counter with wait method
+   std::unique_ptr<UndoLatch> _registrationLatch; // One-shot gate: opens once every task thread has registered
 };
 
 /**

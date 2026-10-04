@@ -26,6 +26,7 @@ Multi-threaded PLC infrastructure with deterministic real-time execution.
 - At least **2 isolated CPU cores** (1 for Master + 1+ for Workers)
 - `isolcpus=`, `nozh_full=`, `rcu_nocbs=` in GRUB
 - Root privileges for CPU frequency management
+- A **C++17** compiler and CMake 3.16 or newer to build
 
 Example of grub basic option (if you don't use undoOS):
 
@@ -122,6 +123,7 @@ The project can also be built from source by cloning the repository and followin
 
 - [API Reference](https://undort.com/undoPLC/api/) – Doxygen-generated
 - [Source Code](https://github.com/undoRT/undoPLC)
+- [Changelog](CHANGELOG.md) – what changed in each release
 
 ## License
 

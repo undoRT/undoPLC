@@ -87,7 +87,7 @@ bool UndoMasterTaskBase::start(uint16_t prio)
 
    // Initialize the starting value of latch counter
    int totalThreads = 1 + static_cast<int>(_syncVars.workers.size());
-   _registrationLatch = std::make_unique<std::latch>(totalThreads);
+   _registrationLatch = std::make_unique<UndoLatch>(totalThreads);
 
    _running.store(true, std::memory_order_release);
 
