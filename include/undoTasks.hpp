@@ -74,7 +74,48 @@ protected:
    int waitCycle(timespec& nextWakeup);
    virtual void readInputBus();
    virtual void writeOutputBus();
+   /**
+    * @brief Hook called on the RT thread right after readInputBus(), before the
+    *        workers run.
+    * @details
+    * Runs every cycle once the input image is in, so a forced input (or a forced
+    * variable the logic reads) is visible to the workers this cycle. A force
+    * cannot be applied earlier, inside process(), and still drive the logic: by
+    * then the workers have already run. Default is a no-op so existing Masters
+    * are unaffected. Override it to call undoDiag::Hub::applyForces(); it must
+    * not block, allocate or take a lock.
+    */
+   virtual void onInputsRead() {}
+   /**
+    * @brief Hook called on the RT thread right before writeOutputBus(), after
+    *        the workers have joined.
+    * @details
+    * Runs every cycle once the workers are done, so a forced output is written
+    * back into memory before the bus copy takes it out: this is what makes a
+    * Force reach the physical process instead of only the observer. Default is a
+    * no-op so existing Masters are unaffected. Override it to call
+    * undoDiag::Hub::applyForces(); it must not block, allocate or take a lock.
+    */
+   virtual void onBeforeOutputsWrite() {}
+   /**
+    * @brief Set the fieldbus outputs to their safe values.
+    * @details Runs from onCycleTimeout() (watchdog trip), after which run()
+    * breaks out of the cycle loop: the output hooks are not called again. A
+    * derived Master that keeps running after a safe stop must stop calling
+    * applyForces() and clear the hub's forces itself, so a forced TRUE can never
+    * overwrite the safe value this handler wrote to the bus. Safe state always
+    * wins over forces.
+    */
    virtual void safeStopHandler() = 0;
+   /**
+    * @brief End-of-cycle hook, called on the RT thread right after writeOutputBus().
+    * @details
+    * Runs every cycle once the workers have joined and the outputs are settled,
+    * which is the only point where a diagnostics hub sees a coherent snapshot.
+    * Default is a no-op so existing Masters are unaffected. Override it to call
+    * undoDiag::Hub::process(); it must not block, allocate or take a lock.
+    */
+   virtual void onCycleEnd() {}
    virtual void onCycleTimeout();
    virtual bool runStartup() { return true; }
    virtual void runFinish() { return; }

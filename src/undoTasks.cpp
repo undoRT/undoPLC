@@ -234,6 +234,10 @@ void UndoMasterTaskBase::run()
       // Process fieldbus read operations
       readInputBus();
 
+      // Diagnostics hook: after the inputs are in, so a forced input (or a
+      // forced variable the logic reads) is visible to the workers this cycle.
+      onInputsRead();
+
       // Initialize synchronization state and trigger workers (Fork phase)
       if (totalWorkers > 0) {
          {
@@ -260,8 +264,18 @@ void UndoMasterTaskBase::run()
          }
       }
 
+      // Diagnostics hook: after the join, before the outputs go out, so a forced
+      // output is written back into memory and the bus copy takes the forced
+      // value to the physical process.
+      onBeforeOutputsWrite();
+
       // Process fieldbus write operations (Outputs are written even if a worker timed out, or in safe state)
       writeOutputBus();
+
+      // Diagnostics hook: last point of the cycle, after the join and after the
+      // outputs are settled, so an observer sees a coherent snapshot.
+      onCycleEnd();
+
       firstCycle = false;
    }
    runFinish();

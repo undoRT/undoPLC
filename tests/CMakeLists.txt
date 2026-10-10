@@ -3,6 +3,7 @@
 # Every test lives in its own directory with its own CMakeLists.txt.
 
 add_subdirectory(test_latch)
+add_subdirectory(test_diag)
 
 # TODO The test_cpu, test_log, test_log_multithread, test_plc_placehodler and
 # test_task directories are not registered yet. Each of their CMakeLists.txt
